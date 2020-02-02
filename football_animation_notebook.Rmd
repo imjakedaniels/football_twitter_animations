@@ -1,0 +1,493 @@
+---
+title: "Animating Twitter Discussions about the Leafs"
+output: html_document
+---
+
+# Packages
+
+```{r packages, message = FALSE}
+library(tidyverse) # for the basics
+library(rtweet) # for tweets
+library(lubridate) # for date manipulation
+library(tidytext) # for tokenizing
+library(gganimate) # for gifs
+library(rvest) # for scraping html
+library(png) # for image manipulation
+library(grid) # for custom plot manipulation
+library(extrafont) # for nice fonts
+library(ggtext) # for adding colour in plot titles
+loadfonts(device = "pdf", quiet = TRUE)
+theme_set(theme_light(base_size = 20, base_family = "Roboto Condensed"))
+```
+
+You'll also need to apply for a Twitter API Token. More details at: https://developer.twitter.com/. 
+
+Please consult [rtweet's vignette](https://rtweet.info/index.html) for more info on setting up the token.
+
+# Input
+
+We only need to specify one thing. And the rest will work. 
+
+...when was the game played?
+
+```{r input}
+game_date <- "2020-01-12"
+
+tweet_keywords <- "#GBvsDET OR #ThePackIsBack OR #PutCheeseOnEverything OR #GoPackGo OR @packers OR #greenbaypackers OR #packers OR packers"
+```
+
+# Game schedule
+
+First, we created the base schedule of the Leafs in the scraping_hockey_data.Rmd notebook by full joining two tables (results and remaining games) at [CBS Sports Websites](https://www.cbssports.com/nhl/teams/TOR/toronto-maple-leafs/schedule/regular/). 
+
+Now we are joining results into remaining games table for complete information. You'd best look through the other notebook for a clearer understanding, or check the website to see how the tables aren't perfectly matched.
+
+```{r schedule_data, message = FALSE}
+# get the base schedule
+team_schedule <- read_csv(str_glue("{here::here()}/team_schedules/packers_game_schedule.csv"))
+```
+
+## Game results
+
+This is the upper table on the web page. It has the game results. I gotta clean it up a bit.
+
+```{r}
+# scrape new results
+page_url <- "https://www.cbssports.com/nfl/teams/GB/green-bay-packers/schedule/regular/"
+
+page_tables <- read_html(page_url) %>%
+  html_table()
+
+completed_game_schedule <- page_tables[[2]] %>%
+  janitor::clean_names() %>%
+  mutate(date_label = date,
+         date = mdy(date),
+         opp = str_trim(str_remove(opp, ".*\\\n")),
+         game_choices = str_glue("Green Bay vs. {opp} - {date_label}")) %>%
+  select(game_choices, date, opp, result, record)
+
+playoff_schedule <- page_tables[[3]] %>%
+  janitor::clean_names() %>%
+  mutate(date_label = date,
+         date = mdy(date),
+         opp = str_trim(str_remove_all(opp, ".*\\\n")),
+         game_choices = str_glue("Green Bay vs. {opp} - {date_label}"),
+         game_start = ymd_hms("2020-01-12 18:40:00"),
+         location_marker = ifelse(date == as.Date("2020-01-12"), "vs.", location_marker),
+         opp = "Seattle") %>%
+  select(game_choices, date, game_start, opponent = opp, location_marker)
+
+# join results table into the original leafs schedule
+team_schedule_results <- team_schedule %>%
+  select(date, game_start, opponent = opp, home_game) %>%
+  left_join(completed_game_schedule) %>%
+  full_join(playoff_schedule) %>%
+  mutate(location_marker = ifelse(home_game == FALSE, "@", "vs."),
+         win = ifelse(str_detect(result, "^W"), TRUE, FALSE))
+```
+
+```{r selecting_game}
+# filter for the game of interest
+game_data <- team_schedule_results %>%
+  filter(date == game_date)
+```
+
+```{r opponent_data}
+# identify the opponent
+opponent <- game_data$opponent
+
+# friendlier formats to save files
+opponent_file_format <- str_replace_all(tolower(opponent), " ", "-")
+opponent_url_format <- str_replace_all(opponent, " ", "_")
+```
+
+# Get tweets and save
+
+Scrape 15,000 tweets that include TMLTalk or LeafsForever or Leafs. These do not include retweets so popular tweets do not heavily influence the TF-IDF formula.
+
+There's a 15 minute delay every 18000 tweets if you want to get more.
+
+Note: rtweet only goes back 9 days so you can't find tweets earlier than that.  
+
+```{r leafs_tweets, message = FALSE}
+# create a folder for the datasets
+if(dir.exists(here::here("/tweets")) == FALSE) {
+  dir.create(here::here("/tweets"))
+}
+
+# save tweets locally
+search_tweets(tweet_keywords,
+              n = 18000*5,
+              include_rts = FALSE,
+              retryonratelimit = TRUE,
+              type = "recent") %>%
+  mutate_if(is.list, as.character) %>%
+  write_csv(here::here(str_glue("tweets/go_pack_go-{opponent_file_format}-green-bay-{game_data$date}.csv")))
+
+tml_talk <- read_csv(here::here(str_glue("tweets/go_pack_go-{opponent_file_format}-green-bay-{game_data$date}.csv")))
+```
+
+## Look at influencers who tweet about the leafs but may not mention any keywords specifically
+
+```{r influencer_tweets, message=FALSE}
+# tmls <- get_timelines(c("domluszczyszyn", "Steve_Dangle",
+#                         "IanGraph", "JeffVeillette",
+#                         "DownGoesBrown", "3rdPeriodSuits",
+#                         "ThatsCappy", "duarteelauraa",
+#                         "rahef_issa", "_marlanderthews", 
+#                         "LeafFan1917", "TheLeafsIMO", 
+#                         "TheOakLeafs", "TheFlintor", 
+#                         "MarkUkLeaf", "LeafsMaz20",
+#                         "karlandtheleafs", "Buds_All_Day",
+#                         "mirtle", "jonassiegel",
+#                         "kristen_shilton", "reporterchris",
+#                         "51Leafs", "ATFulemin",
+#                         "draglikepull", "TLNdc",
+#                         "TicTacTOmar", "PPPLeafs",
+#                         "MatthewsIsALeaf", "LeafsAllDayy",
+#                         "NickDeSouza_", "SteveBurtch",
+#                         "thejustinfisher", "HardevLad",
+#                         "RyanDHobart"), 
+#                       n = 50) %>%
+#   select(created_at, text)
+```
+
+## Combine the tweets
+
+```{r all_tweets}
+# join the timelines of popular leaf accounts into the "leafs" tweet corpus
+tml_full_tweet_set <- tml_talk %>%
+  #full_join(tmls) %>%
+  select(created_at, text)
+```
+
+# Calculating TF-IDF and Tweet volume
+
+## Reduce the set
+
+```{r}
+# limits for desired tweets
+kickoff <-  ymd_hms(game_data$game_start, tz = "America/New_York")
+min_hour <- kickoff - 1800 
+max_hour <- kickoff + 14400 
+
+# filter the tweet data for today's game
+tml_game_tweets <- tml_full_tweet_set %>%
+  filter(created_at > min_hour,
+         created_at < max_hour)
+```
+
+## Remove duplicates
+
+```{r}
+# remove duplicates
+tml_game_tweets_unique <- tml_game_tweets %>%
+  group_by(text) %>% 
+  mutate(tweet_entries = row_number()) %>% # count tweets and remove extra entries
+  filter(tweet_entries == 1) %>%
+  ungroup()
+```
+
+## Gather in 2-minute intervals
+
+```{r}
+# group into two-minute intervals
+tml_tweet_intervals <- tml_game_tweets_unique %>%
+  mutate(created_at = ymd_hms(created_at),
+         interval = with_tz(round_date(created_at, "2 mins"), 
+                            tzone = "America/New_York"))
+```
+
+## Specific words to remove
+
+```{r}
+# Some unwanted_words and the search terms used
+unwanted_words <- c("10u", "t.co", "gotta", "games", "dont", "amp", "https", "10a", "pas", "att", "gonna", "ive", "les", "game", "#GBvsDET", "#ThePackIsBack", "#packersrollcall", "#GoPackGo", "@packers", "#packers", "#greenbaypackers", "packers")
+```
+
+## Turn tweets into word tokens
+
+```{r}
+# create word tokens and count per interval
+tml_two_min_tokens <- tml_tweet_intervals %>%
+  unnest_tokens(word, text, token = "tweets") %>%
+  filter(!str_detect(word, "^@"),
+         str_detect(word, "[a-z-:]+"),
+         !word %in% unwanted_words,
+         nchar(word) > 2) %>%
+  mutate(word = str_replace_all(word, "[,_;\\.?!]", " "),
+         word = str_replace_all(word, ":$", " "),
+         word = str_replace_all(word, "\\\n", " "),
+         word = str_remove_all(word, '[”"“]'),
+         word = str_remove_all(word, "’s$"),
+         word = str_remove_all(word, "'s$"),
+         word = str_trim(word)) %>%
+  filter(!str_detect(word, "https")) # remove links
+anti_join(stop_words, by = "word") %>% # removes noisy words
+  count(word, interval) 
+```
+
+## Perform TF-IDF
+
+```{r}
+# top words and tf-idf, word must appear 3 times in the interval to qualify
+tml_top_words <- tml_two_min_tokens %>%
+  filter(n >= 5) %>%
+  bind_tf_idf(word, interval, n) %>%
+  arrange(desc(tf_idf, interval)) %>%
+  distinct(interval, .keep_all = T)
+```
+
+## Tweet Volume
+
+```{r}
+# calculate volume
+tml_tweet_volume <- tml_tweet_intervals %>% 
+  group_by(interval) %>%
+  summarize(tweet_volume = n()) %>%
+  ungroup()
+```
+
+```{r}
+# extract emojis
+all_emojis <- tml_tweet_intervals %>%
+  mutate(emoji = emo::ji_extract_all(text)) %>%
+  unnest(emoji = c(emoji)) 
+```
+
+## Lookup emojis
+
+```{r}
+# functions to lookup emojis
+emoji_to_link <- function(x) {
+  paste0("https://emojipedia.org/emoji/",x) %>%
+    read_html() %>%
+    html_nodes("tr td a") %>%
+    .[1] %>%
+    html_attr("href") %>%
+    paste0("https://emojipedia.org/", .) %>%
+    read_html() %>%
+    html_node('div[class="vendor-image"] img') %>%
+    html_attr("src")
+}
+
+# download image
+link_to_img <- function(x, size = 35) {
+  paste0("<img src='", x, "' width='", size, "'/>")
+}
+
+# pick most used emoji
+top_emojis <- all_emojis %>%
+  count(interval, emoji) %>%
+  arrange(desc(n, interval)) %>%
+  distinct(interval, .keep_all = T) %>%
+  arrange(interval) %>%
+  mutate(url = map_chr(emoji, slowly(~emoji_to_link(.x), rate_delay(1))),
+         label = link_to_img(url))
+```
+
+## Extract Emojis
+
+```{r}
+emoji_words <- tml_top_words %>%
+  full_join(top_emojis %>% select(-n), by = "interval") %>%
+  arrange(interval) %>%
+  fill(word) %>%
+  fill(emoji) %>%
+  fill(label) %>%
+  drop_na(word)
+```
+
+# Get Packers' timeline
+
+The Leafs account tweets in a similar fashion game-to-game. We can reliably regex the approximate game start, game end, and goal announcements with real time stamps instead of using game time.
+
+```{r getting_leafs_timeline, message = FALSE}
+leafs_timeline <- get_timeline("@Packers", n = 100) %>%
+  mutate_if(is.list, as.character) %>%
+  mutate(created_at = with_tz(ymd_hms(created_at), tzone = "America/New_York")) %>%
+  filter(created_at >= game_data$date)
+```
+
+## Extract game info from Leafs' timeline 
+
+## Goals
+
+@ MapleLeafs always tweet "GOAL" when they score. And often mention the city/team name of an opponent when they score. But I also notice they don't mention the opponent's name and just tweet "Empty net goal" when an opponent does this so I've added that.
+
+```{r find_goals}
+# time of leafs goals
+# leafs_goals <- leafs_timeline %>%
+#   filter(str_detect(text, "TOUCHDOWN") | str_detect(text, "TD"), created_at != "2019-12-29 15:12:49")
+# 
+# # Some regex on opponent's city name (Calgary scores) and team name (Flames score)
+# # to help search for opponent goal announcements
+# opponent_city <- str_extract(str_glue("{opponent}"), "^[a-zA-Z]+")
+# opponent_name <- str_extract(str_glue("{opponent}"), "[a-zA-Z]+$")
+# 
+# opponent_goals_text <- leafs_timeline %>%
+#   filter(str_detect(text, opponent_city) | str_detect(text, opponent_name) | str_detect(text, "Empty net goal"), str_detect(text, "Empty net goal") | str_detect(text, "score")) %>%
+#   select(created_at, text)
+```
+
+## Game start and end
+
+They also usually say "action" or "under way" or "begin" in their opening tweet.
+
+If we win, they always say "LEAFS WIN", otherwise, it's typically "tough" but I just adjust the condition to find the end_of_game tweet accordingly.
+
+```{r game_start_and_end}
+# Usually @MapleLeafs say action, begin, or under way. 
+# Otherwise look at the timeline and find a phrase to extract the game start tweet
+game_start_tweet <- leafs_timeline %>%
+  filter(str_detect(text, "Let's go get it") | str_detect(text, "under way") | str_detect(text, "begin")) %>%
+  arrange(created_at) %>%
+  head(1) %>%
+  select(created_at, text)
+
+# They always say "LEAFS WIN" if they win, and typically mention "Tough" in their losses. Adjust if needed.
+if (game_data$win == TRUE) {
+  end_of_game <- leafs_timeline %>%
+    filter(str_detect(text, "PLAYOFF BYE: SECURED")) %>%
+    select(created_at, text) 
+} else {
+  end_of_game <- leafs_timeline %>%
+    filter(str_detect(text, "(Tough)")) %>%
+    select(created_at, text) 
+}
+```
+
+# Fetch the logos
+
+I scraped all the team logos from Wikipedia. Code for that in the other notebook.
+
+I make them transparent by multiplying the RGB values by 0.2.
+
+```{r leaf_logo}
+# leafs colour
+leafs_blue <- "#203731"
+
+# leafs logo
+l <- readPNG(str_glue("{here::here()}/team_images/1920px-Green_Bay_Packers_logo.svg.png"))
+
+# make transparent
+f <- matrix(rgb(l[,,1],l[,,2],l[,,3], l[,,4] * 0.2), nrow=dim(l)[1]) 
+leafs_logo <- rasterGrob(f, interpolate=TRUE)
+```
+
+```{r opponent_logo}
+# # lookup all team image files
+# files <- file.info(list.files(str_glue("{here::here()}/team_images"), 
+#                               full.names = TRUE))
+# 
+# image_paths <- data.frame(path = rownames(files))
+# 
+# # look for the opponent's image 
+# opponent_image <- image_paths %>%
+#   mutate_if(is.factor, as.character) %>%
+#   filter(str_detect(path, opponent_url_format))
+
+# opponent logo
+m <- readPNG("~/Downloads/Detroit_Lions_logo.svg.png")
+
+# make transparent
+w <- matrix(rgb(m[,,1],m[,,2],m[,,3], m[,,4] * 0.2), nrow=dim(m)[1]) 
+opponent_logo <- rasterGrob(w, interpolate=TRUE)
+```
+
+
+
+# Lookup opponent's colour 
+
+```{r}
+# build url
+team_url <- paste0("https://teamcolorcodes.com/",  "detroit-lions", "-color-codes/")
+
+# get text
+page_text <- read_html(team_url) %>%
+  html_nodes("body") %>%
+  html_nodes("div") %>%
+  html_text() 
+
+opponent_colour <- str_extract(page_text[9], "#[a-zA-Z0-9]+")
+```
+
+# Make the chart
+
+```{r}
+# x-axis Labels
+hourly_ranges <- data.frame(time = seq(min_hour + 1800, max_hour + 1800, by = 3600))
+
+time_breaks <- hourly_ranges %>%
+  mutate(time = format(strptime(hourly_ranges$time, "%F %H:%M:%S"), format = "%I:%M %p"),
+         time = str_remove(time, "^0"),
+         time = str_remove(time, " "),
+         time = toupper(time))
+```
+
+
+```{r chart, dev = 'CairoPNG', dpi = 300, fig.width = 4, fig.height = 3}
+# chart
+base_plot <- tml_tweet_volume  %>%
+  inner_join(top_emojis, by = "interval") %>%
+  ggplot(aes(x = interval, y = tweet_volume)) +
+  geom_line(color = "#FFB612", size = 2) +
+  # geom_vline(xintercept = game_start_tweet$created_at, size = 1.5) +
+  #geom_vline(xintercept = end_of_game$created_at, size = 1.5) +
+  # geom_vline(xintercept = leafs_goals$created_at,
+  #            linetype = 5,
+  #            size = 0.85,
+  #            colour = leafs_blue) +
+  # geom_vline(xintercept = opponent_goals_text$created_at,
+  #            linetype = 2,
+  #            size = 0.85,
+  #            colour = opponent_colour) +
+  geom_richtext(aes(label = label), fill = NA, label.color = NA,
+                label.padding = grid::unit(rep(0, 4), "pt")) +
+  # geom_text(aes(label = word), size = 15, colour = leafs_blue) +
+  scale_x_datetime(breaks = hourly_ranges$time, 
+                   labels = time_breaks$time) +
+  scale_y_log10() +
+  labs(title = str_glue("Green Bay Packers {game_data$location_marker} <b style='color:{opponent_colour}'>{opponent} Lions</b><br>Final: {game_data$result}"),
+       x= "", y = "Tweet Volume - log") +
+  annotation_custom(leafs_logo,
+                    xmin = game_start_tweet$created_at + 4250,
+                    xmax = game_start_tweet$created_at + 100,
+                    ymin=-Inf, ymax=Inf) +
+  annotation_custom(opponent_logo,
+                    xmin = end_of_game$created_at - 4250,
+                    xmax = end_of_game$created_at - 100,
+                    ymin=-Inf, ymax=Inf) +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_line(colour = "grey95"),
+        plot.title = element_markdown(size = 20, face = "bold", colour = leafs_blue,
+                                      lineheight = 1, vjust = 1), 
+        panel.background = element_rect(fill = "#94b98c")) +
+  expand_limits(y = 300)
+```
+
+```{r}
+# Add animation
+animated_plot <- base_plot +
+  transition_reveal(interval) +
+  ease_aes("linear")
+```
+
+# Save animation
+
+```{r saving_animation}
+# create a folder for these
+if(dir.exists(here::here("/animations")) == FALSE) {
+  dir.create(here::here("/animations"))
+}
+
+anim_save(animated_plot, 
+          fps = 20,  duration = 35,
+          width = 1024, height = 512,
+          type = "cairo",
+          filename = str_glue("animations/leafs-{opponent_file_format}-{game_data$date}.gif"))
+
+beepr::beep()
+```
