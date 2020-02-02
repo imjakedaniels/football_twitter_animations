@@ -1,0 +1,18 @@
+game_choices,date,opp,result,record,game_start,time_tv,date_label,venue,home_game
+"Green Bay vs. Chicago - Sep 5, 2019",2019-09-05,Chicago,W 10-3,1-0,NA,NA,NA,NA,NA
+"Green Bay vs. Minnesota - Sep 15, 2019",2019-09-15,Minnesota,W 21-16,2-0,NA,NA,NA,NA,NA
+"Green Bay vs. Denver - Sep 22, 2019",2019-09-22,Denver,W 27-16,3-0,NA,NA,NA,NA,NA
+"Green Bay vs. Philadelphia - Sep 26, 2019",2019-09-26,Philadelphia,L 34-27,3-1,NA,NA,NA,NA,NA
+"Green Bay vs. Dallas - Oct 6, 2019",2019-10-06,Dallas,W 34-24,4-1,NA,NA,NA,NA,NA
+"Green Bay vs. Detroit - Oct 14, 2019",2019-10-14,Detroit,W 23-22,5-1,NA,NA,NA,NA,NA
+"Green Bay vs. Oakland - Oct 20, 2019",2019-10-20,Oakland,W 42-24,6-1,NA,NA,NA,NA,NA
+"Green Bay vs. Kansas City - Oct 27, 2019",2019-10-27,Kansas City,W 31-24,7-1,NA,NA,NA,NA,NA
+"Green Bay vs. L.A. Chargers - Nov 3, 2019",2019-11-03,L.A. Chargers,L 26-11,7-2,NA,NA,NA,NA,NA
+"Green Bay vs. Carolina - Nov 10, 2019",2019-11-10,Carolina,W 24-16,8-2,NA,NA,NA,NA,NA
+Green Bay vs. BYE - —,NA,BYE,—,—,NA,NA,NA,NA,NA
+"Green Bay vs. San Francisco - Nov 24, 2019",2019-11-24,San Francisco,L 37-8,8-3,NA,NA,NA,NA,NA
+"Green Bay vs. N.Y. Giants - Dec 1, 2019",2019-12-01,N.Y. Giants,W 31-13,9-3,NA,NA,NA,NA,NA
+"Green Bay vs. Washington - Dec 8, 2019",2019-12-08,Washington,W 20-15,10-3,NA,NA,NA,NA,NA
+"Green Bay vs. Chicago - Dec 15, 2019",2019-12-15,Chicago,W 21-13,11-3,NA,NA,NA,NA,NA
+"Green Bay vs. Minnesota - Dec 23, 2019",2019-12-23,Minnesota,W 23-10,12-3,NA,NA,NA,NA,NA
+"Green Bay vs. Detroit - Dec 29, 2019",2019-12-29,Detroit,NA,NA,2019-12-29T13:00:00Z,13:00:00,"Dec 29, 2019",Ford Field,FALSE
